@@ -1,0 +1,4 @@
+apiVersion: v2
+name: springboot-hello
+version: 0.1.0
+description: A Helm chart for Spring Boot Hello REST API
