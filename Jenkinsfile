@@ -6,22 +6,18 @@ pipeline {
     }
 
     stages {
-    stage('Checkout') { steps { checkout scm } }
+        stage('Checkout') { steps { checkout scm } }
 
-    stage('Build with Gradle') { steps { sh './gradlew --no-daemon clean bootJar' } }
+        stage('Build with Gradle') { steps { sh './gradlew --no-daemon clean bootJar' } }
 
-        stage('Verify Docker on Agent') {
+        stage('Verify Tools') {
             steps {
                 sh '''
                     export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-                    set -eux
-                    echo "USER: $(id -un)"
-                    echo "HOME: $HOME"
-                    echo "PATH: $PATH"
-                    which docker || true
-                    command -v docker || true
-                    docker version || true
-                    docker info || true
+                    set -e
+                    docker --version
+                    kubectl version --client
+                    kubectl config current-context || true
                 '''
             }
         }
@@ -47,13 +43,31 @@ pipeline {
             }
         }
 
+        stage('Tag Source in Git') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-pat',
+                    usernameVariable: 'GITHUB_USER',
+                    passwordVariable: 'GITHUB_TOKEN'
+                )]) {
+                    sh '''
+                        set -eux
+                        git config user.name "$GITHUB_USER"
+                        git config user.email "$GITHUB_USER@users.noreply.github.com"
+                        git tag -a "v$BUILD_NUMBER" -m "CI tag build $BUILD_NUMBER"
+                        git push "https://$GITHUB_USER:$GITHUB_TOKEN@github.com/hari-uu/project.git" "v$BUILD_NUMBER"
+                    '''
+                }
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             steps {
                 script {
                     sh '''
                         set -eux
                         export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-                        kubectl version --client
+                                                kubectl version --client
                                                 # Apply core resources first (avoid ingress webhook failures breaking the build)
                                                 kubectl apply -f k8s/deployment.yaml
                                                 kubectl apply -f k8s/service.yaml
@@ -67,6 +81,11 @@ pipeline {
                                                     fi
                                                     kubectl apply -f k8s/ingress.yaml || echo "Ingress apply skipped (controller not ready)."
                                                 fi
+                                                # Quick visibility
+                                                kubectl get deploy/springboot-hello
+                                                kubectl get pods -l app=springboot-hello -o wide || true
+                                                kubectl get svc springboot-hello-service || true
+                                                kubectl get ingress springboot-hello-ingress || true
                     '''
                 }
             }
