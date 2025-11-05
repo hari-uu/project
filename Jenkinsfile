@@ -8,6 +8,7 @@ pipeline {
     parameters {
         string(name: 'IMAGE_TAG', defaultValue: '', description: 'Optional image tag to deploy (defaults to BUILD_NUMBER).')
         booleanParam(name: 'ENABLE_GIT_TAG', defaultValue: false, description: 'Create and push git tag v$BUILD_NUMBER')
+        booleanParam(name: 'USE_TUNNEL', defaultValue: false, description: 'Try to run `minikube tunnel` to provision external IPs (requires sudo NOPASSWD).')
     }
 
     stages {
@@ -79,7 +80,7 @@ pipeline {
                                                 kubectl version --client
                                                 # Apply core resources first (avoid ingress webhook failures breaking the build)
                                                 kubectl apply -f k8s/deployment.yaml
-                                                kubectl apply -f k8s/service.yaml
+                                                                                                kubectl apply -f k8s/service.yaml
                                                 # Update image and wait for rollout
                                                 kubectl set image deployment/springboot-hello springboot-hello=$DOCKER_IMAGE --record
                                                 kubectl rollout status deployment/springboot-hello --timeout=90s
@@ -95,6 +96,39 @@ pipeline {
                                                 kubectl get pods -l app=springboot-hello -o wide || true
                                                 kubectl get svc springboot-hello-service || true
                                                 kubectl get ingress springboot-hello-ingress || true
+
+                                                                                                # Attempt to discover External IPs
+                                                                                                echo "Waiting for Service external IP (LoadBalancer) ..."
+                                                                                                for i in $(seq 1 30); do
+                                                                                                    EXTIP=$(kubectl get svc springboot-hello-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+                                                                                                    [ -n "$EXTIP" ] && break || sleep 2
+                                                                                                done
+                                                                                                if [ -z "$EXTIP" ] && [ "${USE_TUNNEL}" = "true" ]; then
+                                                                                                    echo "No external IP yet; attempting to start minikube tunnel (may require sudo NOPASSWD)..."
+                                                                                                    if command -v sudo >/dev/null 2>&1; then
+                                                                                                        sudo -n nohup minikube tunnel >/tmp/minikube-tunnel.log 2>&1 &
+                                                                                                    else
+                                                                                                        nohup minikube tunnel >/tmp/minikube-tunnel.log 2>&1 &
+                                                                                                    fi
+                                                                                                    sleep 5
+                                                                                                    for i in $(seq 1 30); do
+                                                                                                        EXTIP=$(kubectl get svc springboot-hello-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+                                                                                                        [ -n "$EXTIP" ] && break || sleep 2
+                                                                                                    done
+                                                                                                fi
+                                                                                                [ -n "$EXTIP" ] && echo "Service External IP: $EXTIP" || echo "Service External IP not assigned. If needed, run: minikube tunnel"
+
+                                                                                                # Ingress controller external IP (if LoadBalancer)
+                                                                                                INGCIP=$(kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+                                                                                                if [ -n "$INGCIP" ]; then
+                                                                                                    echo "Ingress Controller External IP: $INGCIP"
+                                                                                                    echo "Ingress Host: http://hello-project.com/hello (map DNS/hosts to $INGCIP)"
+                                                                                                else
+                                                                                                    echo "Ingress Controller External IP not assigned. Use: minikube tunnel, then map hello-project.com to the tunnel IP."
+                                                                                                fi
+                                                
+                                                                                                echo "Direct service test (if EXTIP present): curl http://$EXTIP:8080/hello"
+                                                                                                echo "Local fallback: kubectl port-forward svc/springboot-hello-service 8080:8080 && curl http://localhost:8080/hello"
                     '''
                 }
             }
