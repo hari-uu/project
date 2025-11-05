@@ -5,6 +5,11 @@ pipeline {
         PATH = "/opt/homebrew/bin:/usr/local/bin:$PATH"
     }
 
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Optional image tag to deploy (defaults to BUILD_NUMBER).')
+        booleanParam(name: 'ENABLE_GIT_TAG', defaultValue: false, description: 'Create and push git tag v$BUILD_NUMBER')
+    }
+
     stages {
         stage('Checkout') { steps { checkout scm } }
 
@@ -30,9 +35,10 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     script {
-                        env.DOCKER_IMAGE = "${DOCKER_USER}/springboot-hello:${env.BUILD_NUMBER}"
+                        def imageTag = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : env.BUILD_NUMBER
+                        env.DOCKER_IMAGE = "${DOCKER_USER}/springboot-hello:${imageTag}"
                         sh '''
-                            set -eux
+                            set -e
                             export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
                             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                             docker build -t "$DOCKER_IMAGE" .
@@ -44,19 +50,22 @@ pipeline {
         }
 
         stage('Tag Source in Git') {
+            when { expression { return params.ENABLE_GIT_TAG } }
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'github-pat',
-                    usernameVariable: 'GITHUB_USER',
-                    passwordVariable: 'GITHUB_TOKEN'
-                )]) {
-                    sh '''
-                        set -eux
-                        git config user.name "$GITHUB_USER"
-                        git config user.email "$GITHUB_USER@users.noreply.github.com"
-                        git tag -a "v$BUILD_NUMBER" -m "CI tag build $BUILD_NUMBER"
-                        git push "https://$GITHUB_USER:$GITHUB_TOKEN@github.com/hari-uu/project.git" "v$BUILD_NUMBER"
-                    '''
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-pat',
+                        usernameVariable: 'GITHUB_USER',
+                        passwordVariable: 'GITHUB_TOKEN'
+                    )]) {
+                        sh '''
+                            set -e
+                            git config user.name "$GITHUB_USER"
+                            git config user.email "$GITHUB_USER@users.noreply.github.com"
+                            git tag -a "v$BUILD_NUMBER" -m "CI tag build $BUILD_NUMBER"
+                            git push "https://$GITHUB_USER:$GITHUB_TOKEN@github.com/hari-uu/project.git" "v$BUILD_NUMBER"
+                        '''
+                    }
                 }
             }
         }
@@ -65,7 +74,7 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        set -eux
+                                                set -e
                         export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
                                                 kubectl version --client
                                                 # Apply core resources first (avoid ingress webhook failures breaking the build)
