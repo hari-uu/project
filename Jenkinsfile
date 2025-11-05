@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_CREDS = credentials('dockerhub-user')  // Jenkins credential ID
+        // Optional: Set non-secret environment variables as needed
     }
 
     stages {
@@ -20,22 +20,30 @@ pipeline {
 
         stage('Docker Build & Push') {
             steps {
-                script {
-                    DOCKER_IMAGE = "${DOCKER_CREDS_USR}/springboot-hello:${BUILD_NUMBER}"
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-user',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    script {
+                        def dockerImage = "${DOCKER_USER}/springboot-hello:${env.BUILD_NUMBER}"
+                        sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                        sh "docker build -t $dockerImage ."
+                        sh "docker push $dockerImage"
+                        // Store image tag for next stage
+                        env.DOCKER_IMAGE = dockerImage
+                    }
                 }
-                sh "echo $DOCKER_CREDS_PSW | docker login -u $DOCKER_CREDS_USR --password-stdin"
-                sh "docker build -t $DOCKER_IMAGE ."
-                sh "docker push $DOCKER_IMAGE"
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    DOCKER_IMAGE = "${DOCKER_CREDS_USR}/springboot-hello:${BUILD_NUMBER}"
+                    def image = env.DOCKER_IMAGE
+                    sh "kubectl set image deployment/springboot-hello springboot-hello=${image} --record || true"
+                    sh "kubectl rollout status deployment/springboot-hello || kubectl apply -f k8s/"
                 }
-                sh "kubectl set image deployment/springboot-hello springboot-hello=$DOCKER_IMAGE --record || true"
-                sh "kubectl rollout status deployment/springboot-hello || kubectl apply -f k8s/"
             }
         }
     }
