@@ -5,8 +5,15 @@ pipeline {
         PATH = "/usr/local/bin:$PATH"
     }
 
+    environment {
+        PATH = "/usr/local/bin:$PATH"
+    }
+
     stages {
         stage('Checkout') { steps { checkout scm } }
+        stage('Checkout') { steps { checkout scm } }
+
+        stage('Build with Gradle') { steps { sh './gradlew bootJar' } }
 
         stage('Build with Gradle') { steps { sh './gradlew bootJar' } }
 
@@ -64,6 +71,8 @@ pipeline {
     }
 
     post {
+        success { echo 'Deployment successful!' }
+        failure { echo 'Deployment failed.' }
         success { echo 'Deployment successful!' }
         failure { echo 'Deployment failed.' }
     }
