@@ -2,20 +2,13 @@ pipeline {
     agent any
 
     environment {
-        PATH = "/usr/local/bin:$PATH"
-    }
-
-    environment {
-        PATH = "/usr/local/bin:$PATH"
+        PATH = "/opt/homebrew/bin:/usr/local/bin:$PATH"
     }
 
     stages {
-        stage('Checkout') { steps { checkout scm } }
-        stage('Checkout') { steps { checkout scm } }
+    stage('Checkout') { steps { checkout scm } }
 
-        stage('Build with Gradle') { steps { sh './gradlew bootJar' } }
-
-        stage('Build with Gradle') { steps { sh './gradlew bootJar' } }
+    stage('Build with Gradle') { steps { sh './gradlew --no-daemon clean bootJar' } }
 
         stage('Verify Docker on Agent') {
             steps {
@@ -60,10 +53,10 @@ pipeline {
                     sh '''
                         set -eux
                         export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-                        kubectl version --client || true
-                        kubectl apply -f k8s/ || true
-                        kubectl set image deployment/springboot-hello springboot-hello=$DOCKER_IMAGE --record || true
-                        kubectl rollout status deployment/springboot-hello || true
+                        kubectl version --client
+                        kubectl apply -f k8s/
+                        kubectl set image deployment/springboot-hello springboot-hello=$DOCKER_IMAGE --record
+                        kubectl rollout status deployment/springboot-hello --timeout=90s
                     '''
                 }
             }
@@ -71,8 +64,6 @@ pipeline {
     }
 
     post {
-        success { echo 'Deployment successful!' }
-        failure { echo 'Deployment failed.' }
         success { echo 'Deployment successful!' }
         failure { echo 'Deployment failed.' }
     }
