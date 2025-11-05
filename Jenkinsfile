@@ -1,33 +1,29 @@
 pipeline {
     agent any
 
+    environment {
+        PATH = "/usr/local/bin:$PATH"
+    }
+
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
+        stage('Checkout') { steps { checkout scm } }
 
-        stage('Build with Gradle') {
-            steps {
-                sh './gradlew bootJar'
-            }
-        }
+        stage('Build with Gradle') { steps { sh './gradlew bootJar' } }
+
         stage('Verify Docker on Agent') {
-  steps {
-    sh '''
-      set -eux
-      echo "USER: $(id -un)"
-      echo "HOME: $HOME"
-      echo "PATH: $PATH"
-      which docker || true
-      command -v docker || true
-      docker version || true
-      docker info || true
-    '''
-  }
-}
-
+            steps {
+                sh '''
+                    set -eux
+                    echo "USER: $(id -un)"
+                    echo "HOME: $HOME"
+                    echo "PATH: $PATH"
+                    which docker || true
+                    command -v docker || true
+                    docker version || true
+                    docker info || true
+                '''
+            }
+        }
 
         stage('Docker Build & Push') {
             steps {
@@ -38,13 +34,12 @@ pipeline {
                 )]) {
                     script {
                         def dockerImage = "${DOCKER_USER}/springboot-hello:${env.BUILD_NUMBER}"
-                        // Use single-quoted multiline string to avoid Groovy interpolation
                         sh '''
                             set -e
                             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            docker build -t ${dockerImage} .
+                            docker push ${dockerImage}
                         '''
-                        sh "docker build -t ${dockerImage} ."
-                        sh "docker push ${dockerImage}"
                         env.DOCKER_IMAGE = dockerImage
                     }
                 }
@@ -63,11 +58,7 @@ pipeline {
     }
 
     post {
-        success {
-            echo 'Deployment successful!'
-        }
-        failure {
-            echo 'Deployment failed.'
-        }
+        success { echo 'Deployment successful!' }
+        failure { echo 'Deployment failed.' }
     }
 }
