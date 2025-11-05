@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    environment {
-        // Optional: Set non-secret environment variables as needed
-    }
-
     stages {
         stage('Checkout') {
             steps {
@@ -27,10 +23,13 @@ pipeline {
                 )]) {
                     script {
                         def dockerImage = "${DOCKER_USER}/springboot-hello:${env.BUILD_NUMBER}"
-                        sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
-                        sh "docker build -t $dockerImage ."
-                        sh "docker push $dockerImage"
-                        // Store image tag for next stage
+                        // Use single-quoted multiline string to avoid Groovy interpolation
+                        sh '''
+                            set -e
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        '''
+                        sh "docker build -t ${dockerImage} ."
+                        sh "docker push ${dockerImage}"
                         env.DOCKER_IMAGE = dockerImage
                     }
                 }
@@ -50,10 +49,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Deployment successful!'
+            echo 'Deployment successful!'
         }
         failure {
-            echo '❌ Deployment failed.'
+            echo 'Deployment failed.'
         }
     }
 }
