@@ -1,5 +1,5 @@
-FROM arm64v8/eclipse-temurin:17-jdk
+FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY build/libs/project-0.0.1-SNAPSHOT.jar app.jar
+COPY build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
