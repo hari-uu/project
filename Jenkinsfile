@@ -13,6 +13,21 @@ pipeline {
                 sh './gradlew bootJar'
             }
         }
+        stage('Verify Docker on Agent') {
+  steps {
+    sh '''
+      set -eux
+      echo "USER: $(id -un)"
+      echo "HOME: $HOME"
+      echo "PATH: $PATH"
+      which docker || true
+      command -v docker || true
+      docker version || true
+      docker info || true
+    '''
+  }
+}
+
 
         stage('Docker Build & Push') {
             steps {
