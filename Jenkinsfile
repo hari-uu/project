@@ -54,9 +54,19 @@ pipeline {
                         set -eux
                         export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
                         kubectl version --client
-                        kubectl apply -f k8s/
-                        kubectl set image deployment/springboot-hello springboot-hello=$DOCKER_IMAGE --record
-                        kubectl rollout status deployment/springboot-hello --timeout=90s
+                                                # Apply core resources first (avoid ingress webhook failures breaking the build)
+                                                kubectl apply -f k8s/deployment.yaml
+                                                kubectl apply -f k8s/service.yaml
+                                                # Update image and wait for rollout
+                                                kubectl set image deployment/springboot-hello springboot-hello=$DOCKER_IMAGE --record
+                                                kubectl rollout status deployment/springboot-hello --timeout=90s
+                                                # Apply ingress if controller is present; do not fail the build if webhook isn't ready
+                                                if [ -f k8s/ingress.yaml ]; then
+                                                    if kubectl get ns ingress-nginx >/dev/null 2>&1; then
+                                                        kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=60s || true
+                                                    fi
+                                                    kubectl apply -f k8s/ingress.yaml || echo "Ingress apply skipped (controller not ready)."
+                                                fi
                     '''
                 }
             }
